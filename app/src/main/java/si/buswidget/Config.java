@@ -32,21 +32,20 @@ final class Config {
         return c.getSharedPreferences("config", Context.MODE_PRIVATE);
     }
 
+    /** A new install starts with no stops: a slot is only "enabled" once a stop was chosen for it. */
     static Slot load(Context c, int n) {
         SharedPreferences p = prefs(c);
         Slot s = new Slot();
-        if (n == 1) {
-            s.enabled = true; // slot 1 is always on
-            s.code = p.getString("s1_code", "503041");
-            s.label = p.getString("s1_label", "PERUZZIJEVA → CENTER");
-            s.lines = split(p.getString("s1_lines", "3,3B,3G"));
-        } else {
-            s.enabled = p.getBoolean("s2_enabled", true);
-            s.code = p.getString("s2_code", "600022");
-            s.label = p.getString("s2_label", "AJDOVŠČINA → RUDNIK");
-            s.lines = split(p.getString("s2_lines", "3,3B"));
-        }
+        s.code = p.getString("s" + n + "_code", null);
+        s.label = p.getString("s" + n + "_label", "");
+        s.lines = split(p.getString("s" + n + "_lines", ""));
+        s.enabled = s.code != null && p.getBoolean("s" + n + "_enabled", false);
         return s;
+    }
+
+    /** True once the first stop has been chosen. */
+    static boolean isSetUp(Context c) {
+        return load(c, 1).enabled;
     }
 
     static void save(Context c, int n, String code, String label, Set<String> lines) {

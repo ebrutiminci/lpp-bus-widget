@@ -104,7 +104,7 @@ public class PickStopActivity extends Activity {
             return insets;
         });
 
-        root.addView(Ui.text(this, slot == 1 ? "LEFT SIDE OF WIDGET" : "RIGHT SIDE OF WIDGET", 12, Ui.ACCENT, true));
+        root.addView(Ui.text(this, slot == 1 ? "YOUR STOP" : "SECOND STOP", 12, Ui.ACCENT, true));
         title = Ui.text(this, "", 24, Ui.TEXT, true);
         title.setPadding(0, Ui.dp(this, 4), 0, 0);
         root.addView(title);

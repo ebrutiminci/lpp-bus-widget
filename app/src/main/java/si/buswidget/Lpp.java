@@ -43,7 +43,7 @@ final class Lpp {
         con.setConnectTimeout(timeoutMs);
         con.setReadTimeout(timeoutMs);
         con.setRequestProperty("Accept", "application/json");
-        con.setRequestProperty("User-Agent", "LPP-Bus-Widget/1.3 (Android)");
+        con.setRequestProperty("User-Agent", "LPP-Bus-Widget/1.4 (Android)");
         try (InputStream in = con.getInputStream()) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[16384];

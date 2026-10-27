@@ -62,7 +62,15 @@ public class BusWidget extends AppWidgetProvider {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
+    private static PendingIntent openAppIntent(Context c) {
+        Intent i = new Intent(c, MainActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return PendingIntent.getActivity(c, 1, i,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
     private static void showUpdating(Context c) {
+        if (!Config.isSetUp(c)) return;
         int[] ids = widgetIds(c);
         if (ids.length == 0) return;
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_bus);
@@ -76,6 +84,19 @@ public class BusWidget extends AppWidgetProvider {
         if (ids.length == 0) return;
 
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_bus);
+
+        // Fresh install: no stop chosen yet. Tapping opens the app to set it up.
+        if (!Config.isSetUp(c)) {
+            v.setTextViewText(R.id.s1_label, "LPP BUS");
+            v.setTextViewText(R.id.s1_big, "Set up");
+            v.setTextViewText(R.id.s1_small, "Tap to choose your stop");
+            v.setViewVisibility(R.id.s2_col, View.GONE);
+            v.setViewVisibility(R.id.divider, View.GONE);
+            v.setTextViewText(R.id.footer, "");
+            v.setOnClickPendingIntent(R.id.root, openAppIntent(c));
+            AppWidgetManager.getInstance(c).updateAppWidget(ids, v);
+            return;
+        }
 
         boolean ok1 = fillSlot(c, v, 1, R.id.s1_label, R.id.s1_big, R.id.s1_small);
 

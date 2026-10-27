@@ -61,6 +61,9 @@ public class MainActivity extends Activity {
         root.addView(credit);
 
         setContentView(scroll);
+
+        // First launch: no stop yet, so go straight to choosing one.
+        if (savedInstanceState == null && !Config.isSetUp(this)) pick(1);
     }
 
     @Override
@@ -71,12 +74,32 @@ public class MainActivity extends Activity {
 
     private void showSlots() {
         slotsBox.removeAllViews();
+        boolean first = Config.isSetUp(this);
+
+        if (!first) {
+            LinearLayout card = Ui.card(this);
+            card.addView(Ui.text(this, "YOUR STOP", 12, Ui.ACCENT, true));
+            TextView none = Ui.text(this, "No stop chosen yet", 18, Ui.TEXT, true);
+            none.setPadding(0, Ui.dp(this, 6), 0, 0);
+            card.addView(none);
+            card.addView(Ui.text(this, "Pick the stop you use and the bus you take.", 14, Ui.MUTED, false));
+            LinearLayout buttons = new LinearLayout(this);
+            buttons.setPadding(0, Ui.dp(this, 12), 0, 0);
+            buttons.addView(Ui.button(this, "Choose a stop", true, v -> pick(1)));
+            card.addView(buttons);
+            slotsBox.addView(card);
+            return;
+        }
+
         for (int n = 1; n <= Config.SLOTS; n++) {
             final int slot = n;
             Config.Slot s = Config.load(this, n);
 
             LinearLayout card = Ui.card(this);
-            card.addView(Ui.text(this, n == 1 ? "LEFT SIDE OF WIDGET" : "RIGHT SIDE OF WIDGET", 12, Ui.ACCENT, true));
+            String header = n == 1
+                    ? (Config.load(this, 2).enabled ? "LEFT SIDE OF WIDGET" : "YOUR STOP")
+                    : "SECOND STOP (OPTIONAL)";
+            card.addView(Ui.text(this, header, 12, Ui.ACCENT, true));
 
             LinearLayout buttons = new LinearLayout(this);
             buttons.setOrientation(LinearLayout.HORIZONTAL);
@@ -96,10 +119,11 @@ public class MainActivity extends Activity {
                     }));
                 }
             } else {
-                TextView none = Ui.text(this, "Not used, the widget shows one stop", 15, Ui.MUTED, false);
+                TextView none = Ui.text(this, "Show a second stop next to the first one, e.g. for your way home.",
+                        15, Ui.MUTED, false);
                 none.setPadding(0, Ui.dp(this, 6), 0, 0);
                 card.addView(none);
-                buttons.addView(Ui.button(this, "Add a stop", true, v -> pick(slot)));
+                buttons.addView(Ui.button(this, "Add a second stop", false, v -> pick(slot)));
             }
             card.addView(buttons);
             slotsBox.addView(card);
