@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+// On GitHub, every build gets a higher number so phones accept it as an update.
+def buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "0").toInteger()
+
+android {
+    namespace 'si.buswidget'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "si.buswidget"
+        minSdk 26
+        targetSdk 35
+        versionCode 100 + buildNumber
+        versionName "1.3"
+    }
+
+    // The release key lives in GitHub secrets, never in this repo.
+    signingConfigs {
+        release {
+            def ks = System.getenv("KEYSTORE_PATH")
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv("KEYSTORE_PATH")) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

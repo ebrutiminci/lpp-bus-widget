@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LPP Bus</string>
+    <string name="widget_name">LPP Bus – my stops</string>
+    <string name="widget_desc">Next buses at the stops you choose in the app. Tap to refresh.</string>
+</resources>
