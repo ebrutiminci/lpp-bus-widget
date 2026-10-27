@@ -85,6 +85,7 @@ public class PickStopActivity extends Activity {
     private String chosenName;
     private List<BusOption> options = new ArrayList<>();
     private Set<String> notRunning = new TreeSet<>(Config.LINE_ORDER);
+    private boolean loadFailed; // true if the bus data didn't answer for at least one side of the road
     private final List<BusOption> ticked = new ArrayList<>();
     private TextView nextButton;
 
@@ -282,14 +283,20 @@ public class PickStopActivity extends Activity {
             List<BusOption> found = new ArrayList<>();
             Set<String> running = new HashSet<>();
             Set<String> groupsHere = new LinkedHashSet<>();
+            boolean failed = false;
 
             // 1. Every distinct "line → destination" leaving from each platform.
             for (Lpp.Station p : platforms) {
                 groupsHere.addAll(p.groups);
-                List<Lpp.Arrival> arr;
-                try {
-                    arr = Lpp.arrivals(p.code, 6000);
-                } catch (Exception e) {
+                // Mobile data can be slow: try twice before giving up.
+                List<Lpp.Arrival> arr = null;
+                for (int attempt = 0; attempt < 2 && arr == null; attempt++) {
+                    try {
+                        arr = Lpp.arrivals(p.code, 10000);
+                    } catch (Exception ignored) { }
+                }
+                if (arr == null) {
+                    failed = true;
                     continue;
                 }
                 Map<String, BusOption> byKey = new LinkedHashMap<>();
@@ -331,9 +338,11 @@ public class PickStopActivity extends Activity {
             Set<String> idle = new TreeSet<>(Config.LINE_ORDER);
             for (String g : groupsHere) if (!g.isEmpty() && !running.contains(g)) idle.add(g);
 
+            final boolean anyFailed = failed;
             runOnUiThread(() -> {
                 busy = false;
                 status.setText("");
+                loadFailed = anyFailed;
                 options = found;
                 notRunning = idle;
                 ticked.clear();
@@ -400,8 +409,11 @@ public class PickStopActivity extends Activity {
         LinearLayout col = scrollingPage(buttonBar(Ui.button(this, "Back", false, v -> onBackPressed()), nextButton));
 
         if (options.isEmpty()) {
-            col.addView(Ui.text(this, "No buses are coming to this stop right now, so the app can't tell "
-                    + "which way they go. Try again when buses are running.", 15, Ui.WARN, false));
+            col.addView(Ui.text(this, loadFailed
+                    ? "Couldn't reach the bus data. The connection may be slow. Check your internet and try again."
+                    : "No buses are coming to this stop right now, so the app can't tell which way they go. "
+                      + "Try again when buses are running.", 15, Ui.WARN, false));
+            col.addView(retryButton());
             return;
         }
 
@@ -465,6 +477,14 @@ public class PickStopActivity extends Activity {
             col.addView(box);
         }
 
+        if (loadFailed) {
+            TextView warn = Ui.text(this, "Some buses may be missing: the data for one side of the road didn't load.",
+                    14, Ui.WARN, false);
+            warn.setPadding(0, Ui.dp(this, 14), 0, 0);
+            col.addView(warn);
+            col.addView(retryButton());
+        }
+
         if (!notRunning.isEmpty()) {
             TextView idle = Ui.text(this, "Not running right now: line " + String.join(", ", notRunning)
                     + ". Come back when they run to add them.", 13, Ui.MUTED, false);
@@ -472,6 +492,18 @@ public class PickStopActivity extends Activity {
             col.addView(idle);
         }
         paintBoxes(boxes, ticks);
+    }
+
+    private View retryButton() {
+        LinearLayout row = new LinearLayout(this);
+        row.setPadding(0, Ui.dp(this, 12), 0, 0);
+        row.addView(Ui.button(this, "Try again", true, v -> {
+            if (!busy) {
+                showSearch();
+                onStopChosen(chosenName);
+            }
+        }));
+        return row;
     }
 
     /** Ticked boxes go green; boxes from the other side of the road fade out. */
