@@ -1,11 +1,13 @@
 package si.buswidget;
 
+import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -17,22 +19,38 @@ import java.util.Locale;
 
 /**
  * Home-screen widget: next buses at up to two stops chosen in the app.
- * Tapping the widget refreshes it. Android also refreshes it every 30 min.
+ *
+ * How it stays right without constant internet:
+ *  - Each refresh saves the next few buses with their arrival clock time.
+ *  - When a shown bus's time passes, an alarm redraws the widget from that saved list,
+ *    so the next bus moves up. No internet needed for that.
+ *  - It refreshes from the internet when tapped, after settings change, and in the
+ *    background every ~15 min during the hours you usually look (see {@link Schedule}).
  */
 public class BusWidget extends AppWidgetProvider {
 
-    static final String ACTION_REFRESH = "si.buswidget.REFRESH";
+    static final String ACTION_REFRESH = "si.buswidget.REFRESH"; // reload (e.g. after settings change)
+    static final String ACTION_TAP = "si.buswidget.TAP";         // the user tapped the widget
+    static final String ACTION_TICK = "si.buswidget.TICK";       // a shown bus has left: redraw only
+
+    private static final int KEEP = 8;              // buses saved per stop
+    private static final long GRACE_MS = 60_000L;   // keep a bus on screen 1 min past its time
 
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        if (AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action) || ACTION_REFRESH.equals(action)) {
-            final Context app = context.getApplicationContext();
+        final Context app = context.getApplicationContext();
+        if (ACTION_TICK.equals(action)) {
+            render(app);
+        } else if (AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)
+                || ACTION_REFRESH.equals(action) || ACTION_TAP.equals(action)) {
+            if (ACTION_TAP.equals(action)) Schedule.recordTap(app);
+            Schedule.ensureJob(app);
             final PendingResult pending = goAsync();
             showUpdating(app);
             new Thread(() -> {
                 try {
-                    refresh(app);
+                    refresh(app, 4000);
                 } finally {
                     pending.finish();
                 }
@@ -42,11 +60,92 @@ public class BusWidget extends AppWidgetProvider {
         }
     }
 
+    @Override
+    public void onEnabled(Context context) {
+        Schedule.ensureJob(context.getApplicationContext());
+    }
+
+    @Override
+    public void onDisabled(Context context) {
+        Schedule.cancelJob(context.getApplicationContext());
+        alarm(context).cancel(tickIntent(context));
+    }
+
     /** Ask all widgets to reload (used after settings change). */
     static void requestRefresh(Context c) {
         Intent i = new Intent(c, BusWidget.class);
         i.setAction(ACTION_REFRESH);
         c.sendBroadcast(i);
+    }
+
+    // ---------------------------------------------------------------- data
+
+    /** One saved upcoming bus. */
+    private static final class Bus {
+        String line;
+        long when;   // arrival, epoch millis
+        int type;    // 0 = live, 1 = timetable, 2 = at the stop
+    }
+
+    private static SharedPreferences cache(Context c) {
+        return c.getSharedPreferences("widget_cache", Context.MODE_PRIVATE);
+    }
+
+    static boolean hasWidgets(Context c) {
+        return widgetIds(c).length > 0;
+    }
+
+    /** Downloads the next buses for both stops, saves them, and redraws. */
+    static void refresh(Context c, int timeoutMs) {
+        if (!hasWidgets(c)) return;
+        if (Config.isSetUp(c)) {
+            long now = System.currentTimeMillis();
+            SharedPreferences.Editor e = cache(c).edit();
+            boolean ok = true;
+            for (int n = 1; n <= Config.SLOTS; n++) {
+                Config.Slot s = Config.load(c, n);
+                if (!s.enabled) {
+                    e.remove("s" + n).remove("s" + n + "_ok");
+                    continue;
+                }
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    int count = 0;
+                    for (Lpp.Arrival a : Lpp.arrivals(s.code, timeoutMs)) {
+                        if (!Config.matches(s.lines, a.line)) continue;
+                        long when = now + Math.max(0, a.eta) * 60_000L;
+                        sb.append(a.line.replace("|", "").replace(";", ""))
+                                .append('|').append(when).append('|').append(a.type).append(';');
+                        if (++count >= KEEP) break;
+                    }
+                    e.putString("s" + n, sb.toString()).putBoolean("s" + n + "_ok", true);
+                } catch (Exception ex) {
+                    ok = false;
+                    e.putString("s" + n, "").putBoolean("s" + n + "_ok", false);
+                }
+            }
+            e.putLong("fetched", now).putBoolean("ok", ok).commit();
+        }
+        render(c);
+    }
+
+    private static List<Bus> saved(Context c, int n) {
+        List<Bus> list = new ArrayList<>();
+        String raw = cache(c).getString("s" + n, "");
+        if (raw == null || raw.isEmpty()) return list;
+        for (String item : raw.split(";")) {
+            String[] f = item.split("\\|");
+            if (f.length < 3) continue;
+            try {
+                Bus b = new Bus();
+                b.line = f[0];
+                b.when = Long.parseLong(f[1]);
+                b.type = Integer.parseInt(f[2]);
+                list.add(b);
+            } catch (NumberFormatException ignored) { }
+        }
+        list.sort((x, y) -> Long.compare(x.when, y.when));
+        return list;
     }
 
     // ---------------------------------------------------------------- UI
@@ -57,8 +156,15 @@ public class BusWidget extends AppWidgetProvider {
 
     private static PendingIntent tapIntent(Context c) {
         Intent i = new Intent(c, BusWidget.class);
-        i.setAction(ACTION_REFRESH);
+        i.setAction(ACTION_TAP);
         return PendingIntent.getBroadcast(c, 0, i,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private static PendingIntent tickIntent(Context c) {
+        Intent i = new Intent(c, BusWidget.class);
+        i.setAction(ACTION_TICK);
+        return PendingIntent.getBroadcast(c, 2, i,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
@@ -67,6 +173,10 @@ public class BusWidget extends AppWidgetProvider {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return PendingIntent.getActivity(c, 1, i,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private static AlarmManager alarm(Context c) {
+        return (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
     }
 
     private static void showUpdating(Context c) {
@@ -79,10 +189,10 @@ public class BusWidget extends AppWidgetProvider {
         AppWidgetManager.getInstance(c).partiallyUpdateAppWidget(ids, v);
     }
 
-    static void refresh(Context c) {
+    /** Draws the widget from the saved buses (no internet) and sets the next redraw. */
+    static void render(Context c) {
         int[] ids = widgetIds(c);
         if (ids.length == 0) return;
-
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_bus);
 
         // Fresh install: no stop chosen yet. Tapping opens the app to set it up.
@@ -98,62 +208,68 @@ public class BusWidget extends AppWidgetProvider {
             return;
         }
 
-        boolean ok1 = fillSlot(c, v, 1, R.id.s1_label, R.id.s1_big, R.id.s1_small);
+        long now = System.currentTimeMillis();
+        long nextChange = Long.MAX_VALUE;
 
-        Config.Slot s2 = Config.load(c, 2);
-        boolean ok2 = true;
-        if (s2.enabled) {
+        nextChange = Math.min(nextChange, drawSlot(c, v, 1, now, R.id.s1_label, R.id.s1_big, R.id.s1_small));
+        if (Config.load(c, 2).enabled) {
             v.setViewVisibility(R.id.s2_col, View.VISIBLE);
             v.setViewVisibility(R.id.divider, View.VISIBLE);
-            ok2 = fillSlot(c, v, 2, R.id.s2_label, R.id.s2_big, R.id.s2_small);
+            nextChange = Math.min(nextChange, drawSlot(c, v, 2, now, R.id.s2_label, R.id.s2_big, R.id.s2_small));
         } else {
             v.setViewVisibility(R.id.s2_col, View.GONE);
             v.setViewVisibility(R.id.divider, View.GONE);
         }
 
-        String time = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date());
-        v.setTextViewText(R.id.footer, (ok1 && ok2)
+        SharedPreferences cache = cache(c);
+        long fetched = cache.getLong("fetched", 0);
+        String time = fetched > 0 ? clock(fetched) : "–";
+        v.setTextViewText(R.id.footer, cache.getBoolean("ok", true)
                 ? "Updated " + time + " · tap to refresh  ·  * = timetable"
                 : "No connection at " + time + " · tap to retry");
         v.setOnClickPendingIntent(R.id.root, tapIntent(c));
-
         AppWidgetManager.getInstance(c).updateAppWidget(ids, v);
+
+        // Redraw when the first shown bus has left. RTC (not wakeup): it only runs while the
+        // phone is in use, which is when anyone looks at the widget.
+        AlarmManager am = alarm(c);
+        if (nextChange != Long.MAX_VALUE) am.set(AlarmManager.RTC, nextChange, tickIntent(c));
+        else am.cancel(tickIntent(c));
     }
 
-    /** Fills one column. Returns false if the data couldn't be loaded. */
-    private static boolean fillSlot(Context c, RemoteViews v, int n, int labelId, int bigId, int smallId) {
+    /** Fills one column from saved buses. Returns when this column next changes. */
+    private static long drawSlot(Context c, RemoteViews v, int n, long now, int labelId, int bigId, int smallId) {
         Config.Slot s = Config.load(c, n);
         v.setTextViewText(labelId, s.label);
-        try {
-            List<Lpp.Arrival> buses = new ArrayList<>();
-            for (Lpp.Arrival a : Lpp.arrivals(s.code, 4000)) {
-                if (Config.matches(s.lines, a.line)) buses.add(a);
-            }
-            if (buses.isEmpty()) {
-                v.setTextViewText(bigId, "–");
-                v.setTextViewText(smallId, "No buses soon");
-                return true;
-            }
-            Lpp.Arrival first = buses.get(0);
-            v.setTextViewText(bigId, clockText(first));
-            String small = "Line " + first.line;
-            if (buses.size() > 1) {
-                Lpp.Arrival next = buses.get(1);
-                small += " · next " + next.line + " at " + clockText(next);
-            }
-            v.setTextViewText(smallId, small);
-            return true;
-        } catch (Exception e) {
+
+        if (!cache(c).getBoolean("s" + n + "_ok", true)) {
             v.setTextViewText(bigId, "–");
             v.setTextViewText(smallId, "No data");
-            return false;
+            return Long.MAX_VALUE;
         }
+
+        List<Bus> all = saved(c, n);
+        List<Bus> upcoming = new ArrayList<>();
+        for (Bus b : all) if (b.when + GRACE_MS > now) upcoming.add(b);
+
+        if (upcoming.isEmpty()) {
+            v.setTextViewText(bigId, "–");
+            v.setTextViewText(smallId, all.isEmpty() ? "No buses soon" : "Tap to refresh");
+            return Long.MAX_VALUE;
+        }
+
+        Bus first = upcoming.get(0);
+        v.setTextViewText(bigId, clock(first.when) + (first.type == 1 ? "*" : ""));
+        String small = "Line " + first.line;
+        if (upcoming.size() > 1) {
+            Bus next = upcoming.get(1);
+            small += " · next " + next.line + " at " + clock(next.when) + (next.type == 1 ? "*" : "");
+        }
+        v.setTextViewText(smallId, small);
+        return first.when + GRACE_MS;
     }
 
-    /** Arrival as a clock time (now + eta), e.g. "09:52", with * if it's from the timetable. */
-    private static String clockText(Lpp.Arrival b) {
-        long when = System.currentTimeMillis() + Math.max(0, b.eta) * 60_000L;
-        String t = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(when));
-        return t + (b.type == 1 ? "*" : "");
+    private static String clock(long millis) {
+        return new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(millis));
     }
 }

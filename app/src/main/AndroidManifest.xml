@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the background refresh survive a phone restart. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:label="@string/app_name"
@@ -22,6 +24,11 @@
             android:name=".PickStopActivity"
             android:exported="false"
             android:windowSoftInputMode="stateVisible|adjustResize" />
+
+        <service
+            android:name=".RefreshJob"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
 
         <receiver
             android:name=".BusWidget"

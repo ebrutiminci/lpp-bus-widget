@@ -4,7 +4,9 @@ An Android home-screen widget that shows when the next bus comes to the stops yo
 
 - Set it up once: search your stop, then tick the bus you take, written like the sign on the bus (for example **3 → RUDNIK**). The app works out which side of the road you need.
 - See up to two stops side by side, with arrival times such as **09:52**. A `*` means a timetable time instead of live GPS.
-- Tap the widget to refresh it.
+- Tap the widget to refresh it. When a bus has left, the next one moves up by itself.
+- Refreshes itself about every 15 minutes during the hours you usually look (learned from your taps, on the phone only).
+- The app tells you when a new version is available.
 
 ## Install
 
