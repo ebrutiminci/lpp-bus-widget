@@ -86,6 +86,7 @@ public class PickStopActivity extends Activity {
     private List<BusOption> options = new ArrayList<>();
     private Set<String> notRunning = new TreeSet<>(Config.LINE_ORDER);
     private final List<BusOption> ticked = new ArrayList<>();
+    private TextView nextButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -149,11 +150,19 @@ public class PickStopActivity extends Activity {
         return col;
     }
 
-    private LinearLayout buttonBar(TextView... buttons) {
+    /** Bottom bar: Back on the left, the main button in the bottom-right corner. */
+    private LinearLayout buttonBar(TextView back, TextView primary) {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 16));
-        for (TextView b : buttons) bar.addView(b);
+        bar.addView(back);
+        View spacer = new View(this);
+        bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        primary.setLayoutParams(lp);
+        bar.addView(primary);
         return bar;
     }
 
@@ -379,16 +388,16 @@ public class PickStopActivity extends Activity {
     private void showBuses() {
         step = 2;
         title.setText(chosenName);
-        subtitle.setText("Which bus do you take? Tick it, like the sign on the front of the bus.");
+        subtitle.setText("Tick every bus you take. You can pick more than one. They're written like the sign on the front of the bus.");
 
-        final TextView next = Ui.button(this, "Next", true, v -> {
+        nextButton = Ui.button(this, "Next", true, v -> {
             if (ticked.isEmpty()) {
                 Toast.makeText(this, "Tick at least one bus.", Toast.LENGTH_SHORT).show();
             } else {
                 showName();
             }
         });
-        LinearLayout col = scrollingPage(buttonBar(next, Ui.button(this, "Back", false, v -> onBackPressed())));
+        LinearLayout col = scrollingPage(buttonBar(Ui.button(this, "Back", false, v -> onBackPressed()), nextButton));
 
         if (options.isEmpty()) {
             col.addView(Ui.text(this, "No buses are coming to this stop right now, so the app can't tell "
@@ -434,8 +443,10 @@ public class PickStopActivity extends Activity {
             texts.addView(when);
             box.addView(texts, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-            TextView tick = Ui.text(this, "", 22, Ui.ACCENT, true);
-            box.addView(tick);
+            TextView tick = Ui.text(this, "", 16, Ui.ON_ACCENT, true);
+            tick.setGravity(Gravity.CENTER);
+            int ts = Ui.dp(this, 28);
+            box.addView(tick, new LinearLayout.LayoutParams(ts, ts));
 
             box.setOnClickListener(v -> {
                 String side = tickedPlatform();
@@ -472,7 +483,14 @@ public class PickStopActivity extends Activity {
             boolean otherSide = side != null && !side.equals(o.platform.code);
             Ui.setSelected(this, boxes.get(i), on);
             ticks.get(i).setText(on ? "✓" : "");
+            ticks.get(i).setBackground(on
+                    ? Ui.shape(this, Ui.ACCENT, 0, 8)
+                    : Ui.shape(this, android.graphics.Color.TRANSPARENT, Ui.MUTED, 8));
             boxes.get(i).setAlpha(otherSide ? 0.35f : 1f);
+        }
+        if (nextButton != null) {
+            nextButton.setText(ticked.isEmpty() ? "Next" : "Next (" + ticked.size() + ")");
+            nextButton.setAlpha(ticked.isEmpty() ? 0.5f : 1f);
         }
     }
 
@@ -500,8 +518,8 @@ public class PickStopActivity extends Activity {
         input.setSelection(input.getText().length());
 
         LinearLayout col = scrollingPage(buttonBar(
-                Ui.button(this, "Save", true, v -> save(platform, lines, input.getText().toString().trim(), suggestion)),
-                Ui.button(this, "Back", false, v -> onBackPressed())));
+                Ui.button(this, "Back", false, v -> onBackPressed()),
+                Ui.button(this, "Save", true, v -> save(platform, lines, input.getText().toString().trim(), suggestion))));
         col.addView(input);
 
         // What the widget will show, so you can check it against the real bus.
