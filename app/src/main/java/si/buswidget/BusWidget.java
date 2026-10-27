@@ -68,7 +68,9 @@ public class BusWidget extends AppWidgetProvider {
     @Override
     public void onDisabled(Context context) {
         Schedule.cancelJob(context.getApplicationContext());
-        alarm(context).cancel(tickIntent(context));
+        try {
+            alarm(context).cancel(tickIntent(context));
+        } catch (Exception ignored) { }
     }
 
     /** Ask all widgets to reload (used after settings change). */
@@ -232,9 +234,11 @@ public class BusWidget extends AppWidgetProvider {
 
         // Redraw when the first shown bus has left. RTC (not wakeup): it only runs while the
         // phone is in use, which is when anyone looks at the widget.
-        AlarmManager am = alarm(c);
-        if (nextChange != Long.MAX_VALUE) am.set(AlarmManager.RTC, nextChange, tickIntent(c));
-        else am.cancel(tickIntent(c));
+        try {
+            AlarmManager am = alarm(c);
+            if (nextChange != Long.MAX_VALUE) am.set(AlarmManager.RTC, nextChange, tickIntent(c));
+            else am.cancel(tickIntent(c));
+        } catch (Exception ignored) { }
     }
 
     /** Fills one column from saved buses. Returns when this column next changes. */

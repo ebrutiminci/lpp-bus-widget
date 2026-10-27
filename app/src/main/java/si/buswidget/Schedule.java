@@ -109,19 +109,24 @@ final class Schedule {
 
     // ---------------------------------------------------------------- background job
 
+    /** Starts the background refresh. Never crashes the app: at worst, auto-refresh is off. */
     static void ensureJob(Context c) {
-        JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (js == null || js.getPendingJob(JOB_ID) != null) return;
-        JobInfo job = new JobInfo.Builder(JOB_ID, new ComponentName(c, RefreshJob.class))
-                .setPeriodic(PERIOD_MS)
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                .setPersisted(true)
-                .build();
-        js.schedule(job);
+        try {
+            JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            if (js == null || js.getPendingJob(JOB_ID) != null) return;
+            JobInfo job = new JobInfo.Builder(JOB_ID, new ComponentName(c, RefreshJob.class))
+                    .setPeriodic(PERIOD_MS)
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setPersisted(true)
+                    .build();
+            js.schedule(job);
+        } catch (Exception ignored) { }
     }
 
     static void cancelJob(Context c) {
-        JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (js != null) js.cancel(JOB_ID);
+        try {
+            JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            if (js != null) js.cancel(JOB_ID);
+        } catch (Exception ignored) { }
     }
 }
