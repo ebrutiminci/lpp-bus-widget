@@ -57,6 +57,11 @@ final class Config {
                 .apply();
     }
 
+    /** Changes only the name shown on the widget. */
+    static void rename(Context c, int n, String label) {
+        prefs(c).edit().putString("s" + n + "_label", label).apply();
+    }
+
     static void disable(Context c, int n) {
         prefs(c).edit().putBoolean("s" + n + "_enabled", false).apply();
     }

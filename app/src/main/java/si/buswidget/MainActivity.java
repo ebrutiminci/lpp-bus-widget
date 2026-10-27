@@ -6,6 +6,7 @@ import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -23,6 +24,7 @@ public class MainActivity extends Activity {
     private LinearLayout updateBox;
     private TextView autoText;
     private boolean updateChecked;
+    private int editing; // slot being renamed, 0 = none
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -181,12 +183,36 @@ public class MainActivity extends Activity {
             buttons.setOrientation(LinearLayout.HORIZONTAL);
             buttons.setPadding(0, Ui.dp(this, 12), 0, 0);
 
-            if (s.enabled) {
+            if (s.enabled && editing == slot) {
+                // Rename in place: just the name, the stop and buses stay as they are.
+                final EditText input = Ui.input(this, s.label);
+                input.setText(s.label);
+                input.setSelection(input.getText().length());
+                card.addView(input);
+                card.addView(Ui.text(this, "Shown as the small title on the widget. Keep it short.", 13, Ui.MUTED, false));
+                buttons.addView(Ui.button(this, "Save", true, v -> {
+                    String label = input.getText().toString().trim();
+                    if (!label.isEmpty()) {
+                        Config.rename(this, slot, label);
+                        BusWidget.render(this);
+                    }
+                    editing = 0;
+                    showSlots();
+                }));
+                buttons.addView(Ui.button(this, "Cancel", false, v -> {
+                    editing = 0;
+                    showSlots();
+                }));
+            } else if (s.enabled) {
                 TextView name = Ui.text(this, s.label, 18, Ui.TEXT, true);
                 name.setPadding(0, Ui.dp(this, 6), 0, 0);
                 card.addView(name);
                 card.addView(Ui.text(this, Config.linesText(s.lines) + "  ·  stop " + s.code, 14, Ui.MUTED, false));
                 buttons.addView(Ui.button(this, "Change", true, v -> pick(slot)));
+                buttons.addView(Ui.button(this, "Rename", false, v -> {
+                    editing = slot;
+                    showSlots();
+                }));
                 if (n > 1) {
                     buttons.addView(Ui.button(this, "Remove", false, v -> {
                         Config.disable(this, slot);
