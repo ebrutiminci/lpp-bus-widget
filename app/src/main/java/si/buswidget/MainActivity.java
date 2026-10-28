@@ -169,19 +169,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Both sides in use: offer to swap which stop is on the left and which on the right.
-        if (Config.load(this, 2).enabled) {
-            LinearLayout row = new LinearLayout(this);
-            row.setPadding(0, Ui.dp(this, 12), 0, 0);
-            row.addView(Ui.button(this, "⇄  Swap left and right", false, v -> {
-                Config.swapSides(this);
-                editing = 0;
-                BusWidget.requestRefresh(this);
-                showSlots();
-            }));
-            slotsBox.addView(row);
-        }
-
         for (int n = 1; n <= Config.SLOTS; n++) {
             final int slot = n;
             Config.Slot s = Config.load(this, n);
@@ -242,7 +229,31 @@ public class MainActivity extends Activity {
             }
             card.addView(buttons);
             slotsBox.addView(card);
+
+            // Both sides in use: a round swap icon between the two cards.
+            if (n == 1 && Config.load(this, 2).enabled) slotsBox.addView(swapIcon());
         }
+    }
+
+    /** Round icon-only button that swaps the left and right stop. */
+    private android.view.View swapIcon() {
+        TextView icon = Ui.text(this, "⇅", 22, Ui.ACCENT, true);
+        icon.setGravity(android.view.Gravity.CENTER);
+        icon.setBackground(Ui.shape(this, Ui.CARD, Ui.ACCENT, 50));
+        icon.setContentDescription("Swap left and right");
+        icon.setClickable(true);
+        icon.setOnClickListener(v -> {
+            Config.swapSides(this);
+            editing = 0;
+            BusWidget.requestRefresh(this);
+            showSlots();
+        });
+        int size = Ui.dp(this, 44);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
+        lp.gravity = android.view.Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = Ui.dp(this, 12);
+        icon.setLayoutParams(lp);
+        return icon;
     }
 
     private void pick(int slot) {
