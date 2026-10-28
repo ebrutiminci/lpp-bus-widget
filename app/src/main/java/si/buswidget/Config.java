@@ -62,6 +62,33 @@ final class Config {
         prefs(c).edit().putString("s" + n + "_label", label).apply();
     }
 
+    /**
+     * Swaps the left and right stop on the widget. Moves every setting that belongs to a
+     * stop (stop, buses, name, and any per-stop extras), so nothing has to be set up again.
+     */
+    static void swapSides(Context c) {
+        SharedPreferences p = prefs(c);
+        java.util.Map<String, ?> all = p.getAll();
+        SharedPreferences.Editor e = p.edit();
+        for (String k : all.keySet()) {
+            if (k.startsWith("s1_") || k.startsWith("s2_")) e.remove(k);
+        }
+        for (java.util.Map.Entry<String, ?> en : all.entrySet()) {
+            String k = en.getKey();
+            String to;
+            if (k.startsWith("s1_")) to = "s2_" + k.substring(3);
+            else if (k.startsWith("s2_")) to = "s1_" + k.substring(3);
+            else continue;
+            Object v = en.getValue();
+            if (v instanceof String) e.putString(to, (String) v);
+            else if (v instanceof Boolean) e.putBoolean(to, (Boolean) v);
+            else if (v instanceof Integer) e.putInt(to, (Integer) v);
+            else if (v instanceof Long) e.putLong(to, (Long) v);
+            else if (v instanceof Float) e.putFloat(to, (Float) v);
+        }
+        e.commit();
+    }
+
     static void disable(Context c, int n) {
         prefs(c).edit().putBoolean("s" + n + "_enabled", false).apply();
     }

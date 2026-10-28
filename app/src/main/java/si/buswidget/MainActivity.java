@@ -169,6 +169,19 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // Both sides in use: offer to swap which stop is on the left and which on the right.
+        if (Config.load(this, 2).enabled) {
+            LinearLayout row = new LinearLayout(this);
+            row.setPadding(0, Ui.dp(this, 12), 0, 0);
+            row.addView(Ui.button(this, "⇄  Swap left and right", false, v -> {
+                Config.swapSides(this);
+                editing = 0;
+                BusWidget.requestRefresh(this);
+                showSlots();
+            }));
+            slotsBox.addView(row);
+        }
+
         for (int n = 1; n <= Config.SLOTS; n++) {
             final int slot = n;
             Config.Slot s = Config.load(this, n);
@@ -176,7 +189,7 @@ public class MainActivity extends Activity {
             LinearLayout card = Ui.card(this);
             String header = n == 1
                     ? (Config.load(this, 2).enabled ? "LEFT SIDE OF WIDGET" : "YOUR STOP")
-                    : "SECOND STOP (OPTIONAL)";
+                    : (s.enabled ? "RIGHT SIDE OF WIDGET" : "SECOND STOP (OPTIONAL)");
             card.addView(Ui.text(this, header, 12, Ui.ACCENT, true));
 
             LinearLayout buttons = new LinearLayout(this);
