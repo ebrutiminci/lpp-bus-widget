@@ -285,34 +285,78 @@ public class PickStopActivity extends Activity {
             Set<String> groupsHere = new LinkedHashSet<>();
             boolean failed = false;
 
-            // 1. Every distinct "line → destination" leaving from each platform.
+            // 1. Every "line → destination" that stops at each platform, including buses that
+            //    don't run right now (night buses, 3G, …). Then add the next live time where there is one.
             for (Lpp.Station p : platforms) {
                 groupsHere.addAll(p.groups);
                 // Mobile data can be slow: try twice before giving up.
+                List<Lpp.Route> routes = null;
                 List<Lpp.Arrival> arr = null;
+                for (int attempt = 0; attempt < 2 && routes == null; attempt++) {
+                    try {
+                        routes = Lpp.routesOnStation(p.code, 10000);
+                    } catch (Exception ignored) { }
+                }
                 for (int attempt = 0; attempt < 2 && arr == null; attempt++) {
                     try {
                         arr = Lpp.arrivals(p.code, 10000);
                     } catch (Exception ignored) { }
                 }
-                if (arr == null) {
+                if (routes == null && arr == null) {
                     failed = true;
                     continue;
                 }
+                if (routes == null || arr == null) failed = true;
+
                 Map<String, BusOption> byKey = new LinkedHashMap<>();
-                for (Lpp.Arrival a : arr) {
-                    if (a.line.isEmpty()) continue;
-                    running.add(Config.group(a.line));
-                    String key = a.line + "|" + a.dest;
-                    if (byKey.containsKey(key)) continue; // arrivals are soonest first
-                    BusOption o = new BusOption();
-                    o.platform = p;
-                    o.line = a.line;
-                    o.dest = a.dest;
-                    o.tripId = a.tripId;
-                    o.next = a;
-                    byKey.put(key, o);
+                if (routes != null) {
+                    for (Lpp.Route r : routes) {
+                        String key = r.line + "|" + norm(r.dest);
+                        if (byKey.containsKey(key)) continue;
+                        BusOption o = new BusOption();
+                        o.platform = p;
+                        o.line = r.line;
+                        o.dest = r.dest;
+                        o.tripId = r.tripId;
+                        byKey.put(key, o);
+                    }
                 }
+                if (arr != null) {
+                    for (Lpp.Arrival a : arr) {             // soonest first
+                        if (a.line.isEmpty()) continue;
+                        running.add(Config.group(a.line));
+                        String key = a.line + "|" + norm(a.dest);
+                        BusOption o = byKey.get(key);
+                        if (o == null) {
+                            // Same line, destination spelled differently: if this line has only one
+                            // destination here, it's that one.
+                            BusOption only = null;
+                            int count = 0;
+                            for (BusOption x : byKey.values()) {
+                                if (x.line.equals(a.line)) {
+                                    only = x;
+                                    count++;
+                                }
+                            }
+                            if (count == 1) o = only;
+                        }
+                        if (o == null) {
+                            // A destination the route list doesn't name (e.g. a short trip).
+                            if (norm(a.dest).contains("garaz")) continue;
+                            o = new BusOption();
+                            o.platform = p;
+                            o.line = a.line;
+                            o.dest = a.dest;
+                            o.tripId = a.tripId;
+                            byKey.put(key, o);
+                        }
+                        if (o.next == null) {
+                            o.next = a;
+                            if (a.tripId != null && !a.tripId.isEmpty()) o.tripId = a.tripId;
+                        }
+                    }
+                }
+                for (BusOption o : byKey.values()) running.add(Config.group(o.line));
                 found.addAll(byKey.values());
             }
 
@@ -450,8 +494,9 @@ public class PickStopActivity extends Activity {
                 inf.setPadding(0, Ui.dp(this, 2), 0, 0);
                 texts.addView(inf);
             }
-            TextView when = Ui.text(this, "next one " + clock(o.next.eta) + (o.next.type == 1 ? "*" : ""),
-                    13, Ui.MUTED, false);
+            TextView when = Ui.text(this, o.next != null
+                    ? "next one " + clock(o.next.eta) + (o.next.type == 1 ? "*" : "")
+                    : "not running right now", 13, Ui.MUTED, false);
             texts.addView(when);
             box.addView(texts, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -555,14 +600,23 @@ public class PickStopActivity extends Activity {
         col.addView(input);
 
         // What the widget will show, so you can check it against the real bus.
-        BusOption soonest = first;
-        for (BusOption o : ticked) if (o.next.eta < soonest.next.eta) soonest = o;
+        BusOption soonest = null;
+        for (BusOption o : ticked) {
+            if (o.next != null && (soonest == null || o.next.eta < soonest.next.eta)) soonest = o;
+        }
         LinearLayout check = Ui.card(this);
         check.addView(Ui.text(this, "NEXT BUS FROM HERE", 12, Ui.ACCENT, true));
-        TextView big = Ui.text(this, clock(soonest.next.eta) + (soonest.next.type == 1 ? "*" : ""), 30, Ui.TEXT, true);
-        big.setPadding(0, Ui.dp(this, 4), 0, 0);
-        check.addView(big);
-        check.addView(Ui.text(this, "Line " + soonest.line + " → " + soonest.dest, 15, Ui.MUTED, false));
+        if (soonest != null) {
+            TextView big = Ui.text(this, clock(soonest.next.eta) + (soonest.next.type == 1 ? "*" : ""), 30, Ui.TEXT, true);
+            big.setPadding(0, Ui.dp(this, 4), 0, 0);
+            check.addView(big);
+            check.addView(Ui.text(this, "Line " + soonest.line + " → " + soonest.dest, 15, Ui.MUTED, false));
+        } else {
+            TextView none = Ui.text(this, "None of your buses run right now. The widget will show them when they do.",
+                    15, Ui.MUTED, false);
+            none.setPadding(0, Ui.dp(this, 4), 0, 0);
+            check.addView(none);
+        }
         col.addView(check);
 
         List<String> chosen = new ArrayList<>();

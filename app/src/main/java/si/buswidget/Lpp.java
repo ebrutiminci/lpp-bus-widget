@@ -43,7 +43,7 @@ final class Lpp {
         con.setConnectTimeout(timeoutMs);
         con.setReadTimeout(timeoutMs);
         con.setRequestProperty("Accept", "application/json");
-        con.setRequestProperty("User-Agent", "LPP-Bus-Widget/1.7 (Android)");
+        con.setRequestProperty("User-Agent", "LPP-Bus-Widget/1.7.5 (Android)");
         try (InputStream in = con.getInputStream()) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[16384];
@@ -73,6 +73,30 @@ final class Lpp {
             list.add(x);
         }
         list.sort((p, q) -> Integer.compare(p.eta, q.eta));
+        return list;
+    }
+
+    /** One bus (line + destination) that stops at a platform, whether or not it runs right now. */
+    static final class Route {
+        String line;   // e.g. "3G"
+        String dest;   // e.g. "GROSUPLJE"
+        String tripId; // a sample trip, used to look up its stops
+    }
+
+    /** Every line and destination that serves this platform (day and night), without trips to the depot. */
+    static List<Route> routesOnStation(String code, int timeoutMs) throws Exception {
+        String body = get(BASE + "/station/routes-on-station?station-code=" + code, timeoutMs);
+        JSONArray arr = new JSONObject(body).getJSONArray("data");
+        List<Route> list = new ArrayList<>();
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.getJSONObject(i);
+            if (o.optBoolean("is_garage", false)) continue;
+            Route r = new Route();
+            r.line = o.optString("route_number", "").trim();
+            r.dest = o.optString("route_name", "").replace(" obrač.", "").trim();
+            r.tripId = o.optString("trip_id", "");
+            if (!r.line.isEmpty()) list.add(r);
+        }
         return list;
     }
 

@@ -41,7 +41,16 @@ public class BusWidget extends AppWidgetProvider {
         String action = intent.getAction();
         final Context app = context.getApplicationContext();
         if (ACTION_TICK.equals(action)) {
-            render(app);
+            // A shown bus's time has passed. Ask the live data again: if the bus is running late,
+            // it stays on the widget with its new time. Only if there's no internet is it dropped.
+            final PendingResult pending = goAsync();
+            new Thread(() -> {
+                try {
+                    refresh(app, 6000);
+                } finally {
+                    pending.finish();
+                }
+            }).start();
         } else if (AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)
                 || ACTION_REFRESH.equals(action) || ACTION_TAP.equals(action)) {
             if (ACTION_TAP.equals(action)) Schedule.recordTap(app);
@@ -122,8 +131,9 @@ public class BusWidget extends AppWidgetProvider {
                     }
                     e.putString("s" + n, sb.toString()).putBoolean("s" + n + "_ok", true);
                 } catch (Exception ex) {
+                    // Keep the buses we already know, so the widget still shows something useful.
                     ok = false;
-                    e.putString("s" + n, "").putBoolean("s" + n + "_ok", false);
+                    e.putBoolean("s" + n + "_ok", false);
                 }
             }
             e.putLong("fetched", now).putBoolean("ok", ok).commit();
@@ -246,19 +256,14 @@ public class BusWidget extends AppWidgetProvider {
         Config.Slot s = Config.load(c, n);
         v.setTextViewText(labelId, s.label);
 
-        if (!cache(c).getBoolean("s" + n + "_ok", true)) {
-            v.setTextViewText(bigId, "–");
-            v.setTextViewText(smallId, "No data");
-            return Long.MAX_VALUE;
-        }
-
         List<Bus> all = saved(c, n);
         List<Bus> upcoming = new ArrayList<>();
         for (Bus b : all) if (b.when + GRACE_MS > now) upcoming.add(b);
 
         if (upcoming.isEmpty()) {
+            boolean ok = cache(c).getBoolean("s" + n + "_ok", true);
             v.setTextViewText(bigId, "–");
-            v.setTextViewText(smallId, all.isEmpty() ? "No buses soon" : "Tap to refresh");
+            v.setTextViewText(smallId, !ok ? "No data" : all.isEmpty() ? "No buses soon" : "Tap to refresh");
             return Long.MAX_VALUE;
         }
 
